@@ -1,18 +1,10 @@
 import os
+from core.data_flow import RippleData
 
-from ripple.core.db_init import RippleInit
+
 class RippleDB:
-    def __init__(self, name, path=os.getcwd()):
-        self.db_init = RippleInit(name, path)
+    def __init__(self):
+        self.db_init = RippleData
 
-    def write(self):
-        pass
 
-    def read(self):
-        pass
-
-    def update(self):
-        pass
-
-    def delete(self):
-        pass
+ripple = RippleDB("ripple")
