@@ -1,3 +1,5 @@
+import threading
+
 from ripple.core import persist_const
 from ripple.core.persistance import RipplePersist
 
@@ -24,3 +26,7 @@ class RippleDB:
         del self.data[key]
         self._persist_manager.aof_write(key, self.data[key], self.__delete)
         return True
+
+    def create_snapshot(self):
+        thread = threading.Thread(target=self._persist_manager.snapshot_write, args=(self.data,))
+        thread.start()
