@@ -1,4 +1,3 @@
 AOF = "AOF"
 SNAPSHOT = "SNAPSHOT"
-BOTH = "BOTH"
 NONE = None

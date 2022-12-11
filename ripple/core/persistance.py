@@ -1,8 +1,10 @@
+import os
+
 from ripple.core import persist_const
 
 
 class RipplePersist:
-    def __init__(self, persist_as):
+    def __init__(self, persist_as=persist_const.NONE):
         self.__aof_separator = ":"
         self.__write = "+"
         self.__delete = "-"
@@ -12,12 +14,15 @@ class RipplePersist:
 
     def aof_write(self, key, value, op):
         with open(self.__aof_name, "a") as write_desc:
-            write_desc.write(f"{op}:{key}:{value}")
+            write_desc.write(f"{op}:{key}:{value}\n")
+
+    def find_aof(self):
+        return os.path.exists(self.__aof_name)
 
     def aof_load(self, load_dict):
         with open(self.__aof_name, "r") as read_desc:
             for line in read_desc:
-                line.split(self.__aof_separator)
+                line = line.strip("\n").split(self.__aof_separator, 2)
 
                 # 0 - operator; 1 - key, 2 - value
                 if line[0] == self.__write:
@@ -25,6 +30,18 @@ class RipplePersist:
 
                 if line[0] == self.__delete:
                     del load_dict[line[1]]
+        return load_dict
 
-    def init(self):
-        pass
+    def sync_db(self, data_dict):
+        match self.__persist_as:
+            case persist_const.NONE:
+                return data_dict
+            case persist_const.AOF:
+                if self.find_aof():
+                    data_dict = self.aof_load(data_dict)
+                    return data_dict
+            case persist_const.SNAPSHOT:
+                # TO BE IMPLEMENTED
+                pass
+
+        return data_dict
