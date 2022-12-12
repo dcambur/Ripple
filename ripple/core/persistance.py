@@ -1,6 +1,5 @@
 import os
 import json
-import threading
 
 from ripple.core import persist_const
 
