@@ -8,7 +8,9 @@ from .meta import BackupTypes, OperatorTypes
 class AOF:
     def __init__(self, persist_info):
         self.persist_info = persist_info
+        self.buffer = []
         self.__create_file()
+        self.count = 0
 
     def __create_file(self):
         if not self.__find():
@@ -17,9 +19,18 @@ class AOF:
     def __find(self):
         return os.path.exists(self.persist_info.full_path)
 
+    def __update_buffer(self, op, key, value):
+        self.buffer.append(f"{op}:{key}:{json.dumps(value)}\n")
+        self.count += 1
+
     def write(self, key, value, op):
-        with open(self.persist_info.full_path, "a") as write_desc:
-            write_desc.write(f"{op}:{key}:{json.dumps(value)}\n")
+        self.__update_buffer(op, key, value)
+
+        if self.count_tick():
+            thread = threading.Thread(target=fsync_buffer, args=(self.persist_info, self.buffer.copy(),))
+            thread.start()
+            self.buffer.clear()
+            self.count = 0
 
     def load(self):
         load_dict = {}
@@ -32,6 +43,11 @@ class AOF:
                 if line[0] == OperatorTypes.DELETE:
                     del load_dict[line[1]]
         return load_dict
+
+    def count_tick(self):
+        if self.count == self.persist_info.save_every:
+            return True
+        return False
 
 
 class Snapshot:
@@ -61,7 +77,7 @@ class Snapshot:
     def write(self, key, value, op):
         self.__update_snapshot(key, value, op)
         if self.count_tick():
-            thread = threading.Thread(target=create_snapshot, args=(self.persist_info, self.to_write,))
+            thread = threading.Thread(target=create_snapshot, args=(self.persist_info, self.to_write.copy(),))
             thread.start()
             self.count = 0
 
@@ -76,9 +92,20 @@ class Snapshot:
 
 
 def create_snapshot(persist_info, to_write):
-    print(to_write)
     with open(persist_info.full_path, "w") as write_desc:
         json.dump(to_write, write_desc)
+
+
+def fsync_buffer(persist_info, to_write):
+    file = open(persist_info.full_path, "a")
+
+    for record in to_write:
+        file.write(record)
+
+    file.flush()
+    os.fsync(file)
+
+    file.close()
 
 
 class Persistence:

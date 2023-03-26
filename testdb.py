@@ -1,6 +1,8 @@
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from ripple.core.meta import SnapshotInfo, AOFInfo
 from ripple.core.db import RippleDB
+from datetime import datetime
 
 
 def create_data(db, key, value):
@@ -21,11 +23,13 @@ def worker(db, key, value):
 
 
 if __name__ == "__main__":
+    n1 = datetime.now()
     snapshot_meta = SnapshotInfo("", "dumbdb")
-    db = RippleDB(snapshot_meta)
+    aof_meta = AOFInfo("", "dumbdb", 10)
+    db = RippleDB(aof_meta)
 
     threads = []
-    for i in range(200):
+    for i in range(95):
         key = f"key{i}"
         value = f"value{i}"
         thread = threading.Thread(target=worker, args=(db, key, value))
@@ -34,5 +38,5 @@ if __name__ == "__main__":
 
     for thread in threads:
         thread.join()
-
-    print("All threads completed.")
+    ne = datetime.now() - n1
+    print(ne)
