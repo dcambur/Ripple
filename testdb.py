@@ -1,7 +1,6 @@
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from ripple.core.meta import SnapshotInfo, AOFInfo
 from ripple.core.db import RippleDB
+from ripple.core.meta import SnapshotInfo, AOFInfo
 from datetime import datetime
 
 
