@@ -1,5 +1,7 @@
 import os
 import json
+import threading
+
 from .meta import BackupTypes, OperatorTypes
 
 
@@ -36,8 +38,8 @@ class Snapshot:
     def __init__(self, persist_info):
         self.to_write = {}
         self.persist_info = persist_info
-        self.count = 0
 
+        self.count = 0
         self.__create_file()
 
     def __create_file(self):
@@ -58,11 +60,10 @@ class Snapshot:
 
     def write(self, key, value, op):
         self.__update_snapshot(key, value, op)
-
         if self.count_tick():
-            with open(self.persist_info.full_path, "w") as write_desc:
-                json.dump(self.to_write, write_desc)
-                self.count = 0
+            thread = threading.Thread(target=create_snapshot, args=(self.persist_info, self.to_write,))
+            thread.start()
+            self.count = 0
 
     def load(self):
         with open(self.persist_info.full_path, "r") as read_desc:
@@ -72,6 +73,12 @@ class Snapshot:
         if self.count == self.persist_info.save_every:
             return True
         return False
+
+
+def create_snapshot(persist_info, to_write):
+    print(to_write)
+    with open(persist_info.full_path, "w") as write_desc:
+        json.dump(to_write, write_desc)
 
 
 class Persistence:
