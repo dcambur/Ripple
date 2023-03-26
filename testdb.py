@@ -24,12 +24,12 @@ def worker(db, key, value):
 
 if __name__ == "__main__":
     n1 = datetime.now()
-    snapshot_meta = SnapshotInfo("", "dumbdb")
-    aof_meta = AOFInfo("", "dumbdb", 10)
-    db = RippleDB(aof_meta)
+    snapshot_meta = SnapshotInfo("", "dumbdb", 5)
+    aof_meta = AOFInfo("", "dumbdb", 5)
+    db = RippleDB(snapshot_meta)
 
     threads = []
-    for i in range(95):
+    for i in range(10):
         key = f"key{i}"
         value = f"value{i}"
         thread = threading.Thread(target=worker, args=(db, key, value))

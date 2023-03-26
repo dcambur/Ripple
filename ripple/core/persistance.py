@@ -5,12 +5,30 @@ import threading
 from .meta import BackupTypes, OperatorTypes
 
 
+class Counter:
+    def __init__(self, maximum):
+        self.maximum = maximum
+        self.current = 0
+
+    def increment(self):
+        self.current += 1
+
+    def clear(self):
+        self.current = 0
+
+    def tick(self):
+        if self.current == self.maximum:
+            return True
+
+        return False
+
+
 class AOF:
     def __init__(self, persist_info):
         self.persist_info = persist_info
         self.buffer = []
+        self.count = Counter(self.persist_info.save_every)
         self.__create_file()
-        self.count = 0
 
     def __create_file(self):
         if not self.__find():
@@ -19,18 +37,16 @@ class AOF:
     def __find(self):
         return os.path.exists(self.persist_info.full_path)
 
-    def __update_buffer(self, op, key, value):
-        self.buffer.append(f"{op}:{key}:{json.dumps(value)}\n")
-        self.count += 1
-
     def write(self, key, value, op):
-        self.__update_buffer(op, key, value)
+        self.buffer.append(f"{op}:{key}:{json.dumps(value)}\n")
+        self.count.increment()
 
-        if self.count_tick():
+        if self.count.tick():
             thread = threading.Thread(target=fsync_buffer, args=(self.persist_info, self.buffer.copy(),))
             thread.start()
             self.buffer.clear()
-            self.count = 0
+            self.count.clear()
+
 
     def load(self):
         load_dict = {}
@@ -44,18 +60,12 @@ class AOF:
                     del load_dict[line[1]]
         return load_dict
 
-    def count_tick(self):
-        if self.count == self.persist_info.save_every:
-            return True
-        return False
-
 
 class Snapshot:
     def __init__(self, persist_info):
         self.to_write = {}
         self.persist_info = persist_info
-
-        self.count = 0
+        self.count = Counter(self.persist_info.save_every)
         self.__create_file()
 
     def __create_file(self):
@@ -72,14 +82,15 @@ class Snapshot:
         if op == OperatorTypes.DELETE:
             del self.to_write[key]
 
-        self.count += 1
-
     def write(self, key, value, op):
         self.__update_snapshot(key, value, op)
-        if self.count_tick():
+        self.count.increment()
+
+        if self.count.tick():
             thread = threading.Thread(target=create_snapshot, args=(self.persist_info, self.to_write.copy(),))
             thread.start()
-            self.count = 0
+            self.count.clear()
+
 
     def load(self):
         with open(self.persist_info.full_path, "r") as read_desc:
