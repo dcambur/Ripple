@@ -47,7 +47,6 @@ class AOF:
             self.buffer.clear()
             self.count.clear()
 
-
     def load(self):
         load_dict = {}
         # line[0] -> operator; line[1] -> key, line[2] -> value
@@ -90,7 +89,6 @@ class Snapshot:
             thread = threading.Thread(target=create_snapshot, args=(self.persist_info, self.to_write.copy(),))
             thread.start()
             self.count.clear()
-
 
     def load(self):
         with open(self.persist_info.full_path, "r") as read_desc:
