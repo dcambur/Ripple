@@ -1,16 +1,42 @@
-from ripple.core.ripple import RippleDB
-from ripple.core.transaction import Transaction
-import ripple.core.persist_const as persist_const
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from ripple.core.meta import SnapshotInfo, AOFInfo
+from ripple.core.db import RippleDB
+from datetime import datetime
 
-db = RippleDB(persist_const.NONE)
 
-with Transaction(db) as trans:
-    trans.add("hi", "hi")
-    trans.add("maybe", ["call", {"not": True}])
-    trans.add("dima", {"age": 22, "full name": "Cambur Dmitriy", "job": "Software Engineer"})
+def create_data(db, key, value):
+    db.create(key, value)
 
-# db.create("hi", "hi")
-# db.create("maybe", ["call", {"not": True}])
-# db.create("dima", {"age": 22, "full name": "Cambur Dmitriy", "job": "Software Engineer"})
 
-print(db.read("hi"), db.read("maybe"), db.read("dima"))
+def read_data(db, key):
+    print(f"Reading key {key}: {db.read(key)}")
+
+
+def delete_data(db, key):
+    db.delete(key)
+
+
+def worker(db, key, value):
+    create_data(db, key, value)
+    read_data(db, key)
+
+
+if __name__ == "__main__":
+    n1 = datetime.now()
+    snapshot_meta = SnapshotInfo("", "dumbdb", 5)
+    aof_meta = AOFInfo("", "dumbdb", 5)
+    db = RippleDB(snapshot_meta)
+
+    threads = []
+    for i in range(10):
+        key = f"key{i}"
+        value = f"value{i}"
+        thread = threading.Thread(target=worker, args=(db, key, value))
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+    ne = datetime.now() - n1
+    print(ne)

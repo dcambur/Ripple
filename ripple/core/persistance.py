@@ -1,60 +1,145 @@
 import os
 import json
+import threading
 
-from ripple.core import persist_const
+from .meta import BackupTypes, OperatorTypes
 
 
-class RipplePersist:
-    def __init__(self, persist_as=persist_const.NONE):
-        self.__aof_separator = ":"
-        self.__write = "+"
-        self.__delete = "-"
-        self.__aof_name = "ripple.adb"
-        self.__snapshot_name = "ripple.sdb"
-        self.__persist_as = persist_as
+class Counter:
+    def __init__(self, maximum):
+        self.maximum = maximum
+        self.current = 0
 
-    def find_aof(self):
-        return os.path.exists(self.__aof_name)
+    def increment(self):
+        self.current += 1
 
-    def aof_load(self, load_dict):
-        with open(self.__aof_name, "r") as read_desc:
+    def clear(self):
+        self.current = 0
+
+    def tick(self):
+        if self.current == self.maximum:
+            return True
+
+        return False
+
+
+class AOF:
+    def __init__(self, persist_info):
+        self.persist_info = persist_info
+        self.buffer = []
+        self.count = Counter(self.persist_info.save_every)
+        self.__create_file()
+
+    def __create_file(self):
+        if not self.__find():
+            open(self.persist_info.full_path, "x").close()
+
+    def __find(self):
+        return os.path.exists(self.persist_info.full_path)
+
+    def write(self, key, value, op):
+        self.buffer.append(f"{op}:{key}:{json.dumps(value)}\n")
+        self.count.increment()
+
+        if self.count.tick():
+            thread = threading.Thread(target=fsync_buffer, args=(self.persist_info, self.buffer.copy(),))
+            thread.start()
+            self.buffer.clear()
+            self.count.clear()
+
+
+    def load(self):
+        load_dict = {}
+        # line[0] -> operator; line[1] -> key, line[2] -> value
+        with open(self.persist_info.full_path, "r") as read_desc:
             for line in read_desc:
-                line = line.strip("\n").split(self.__aof_separator, 2)
-                # 0 - operator; 1 - key, 2 - value
-                if line[0] == self.__write:
+                line = line.strip(self.persist_info.LINE_SEPARATOR).split(self.persist_info.DATA_SEPARATOR, 2)
+                if line[0] == OperatorTypes.WRITE:
                     load_dict[line[1]] = json.loads(line[2])
-
-                if line[0] == self.__delete:
+                if line[0] == OperatorTypes.DELETE:
                     del load_dict[line[1]]
         return load_dict
 
-    def aof_write(self, key, value, op):
-        if self.__persist_as == persist_const.AOF:
-            with open(self.__aof_name, "a") as write_desc:
-                write_desc.write(f"{op}:{key}:{json.dumps(value)}\n")
 
-    def sync_db(self, data_dict):
-        match self.__persist_as:
-            case persist_const.NONE:
-                return data_dict
-            case persist_const.AOF:
-                if self.find_aof():
-                    data_dict = self.aof_load(data_dict)
-                    return data_dict
-            case persist_const.SNAPSHOT:
-                if self.find_snapshot():
-                    data_dict = self.snapshot_load()
-                    return data_dict
-        return data_dict
+class Snapshot:
+    def __init__(self, persist_info):
+        self.to_write = {}
+        self.persist_info = persist_info
+        self.count = Counter(self.persist_info.save_every)
+        self.__create_file()
 
-    def find_snapshot(self):
-        return os.path.exists(self.__snapshot_name)
+    def __create_file(self):
+        if not self.__find():
+            with open(self.persist_info.full_path, "w") as write_desc:
+                write_desc.write("{}")
 
-    def snapshot_write(self, data_dict):
-        if self.__persist_as == persist_const.SNAPSHOT:
-            with open(self.__snapshot_name, "w") as write_desc:
-                json.dump(data_dict, write_desc)
+    def __find(self):
+        return os.path.exists(self.persist_info.full_path)
 
-    def snapshot_load(self):
-        with open(self.__snapshot_name, "r") as read_desc:
+    def __update_snapshot(self, key, value, op):
+        if op == OperatorTypes.WRITE:
+            self.to_write[key] = value
+        if op == OperatorTypes.DELETE:
+            del self.to_write[key]
+
+    def write(self, key, value, op):
+        self.__update_snapshot(key, value, op)
+        self.count.increment()
+
+        if self.count.tick():
+            thread = threading.Thread(target=create_snapshot, args=(self.persist_info, self.to_write.copy(),))
+            thread.start()
+            self.count.clear()
+
+
+    def load(self):
+        with open(self.persist_info.full_path, "r") as read_desc:
             return json.load(read_desc)
+
+    def count_tick(self):
+        if self.count == self.persist_info.save_every:
+            return True
+        return False
+
+
+def create_snapshot(persist_info, to_write):
+    with open(persist_info.full_path, "w") as write_desc:
+        json.dump(to_write, write_desc)
+
+
+def fsync_buffer(persist_info, to_write):
+    file = open(persist_info.full_path, "a")
+
+    for record in to_write:
+        file.write(record)
+
+    file.flush()
+    os.fsync(file)
+
+    file.close()
+
+
+class Persistence:
+    def __init__(self, persist_info):
+        self.persist_info = persist_info
+        self.backup = self.__get_model()
+
+    def persist(self, command):
+        if self.backup:
+            self.backup.write(command[0], command[1], command[2])
+
+    def __get_model(self):
+        match self.persist_info.model_type:
+            case BackupTypes.NONE:
+                return None
+            case BackupTypes.AOF:
+                return AOF(self.persist_info)
+            case BackupTypes.SNAPSHOT:
+                return Snapshot(self.persist_info)
+
+    def load_backup(self):
+        match self.persist_info.model_type:
+            case BackupTypes.NONE:
+                return {}
+            case _:
+                return self.backup.load()

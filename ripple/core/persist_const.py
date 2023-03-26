@@ -1,3 +1,0 @@
-AOF = "AOF"
-SNAPSHOT = "SNAPSHOT"
-NONE = None
